@@ -9,6 +9,7 @@ A scalable bulk email automation system built with **Frontend + Backend APIs + n
 **BulkMailPro** allows users to upload a client list via a sheet (CSV/Excel) and configure campaign details from the frontend.  
 The backend processes the data and triggers **n8n automation**, which sends emails using **multiple SMTP accounts** with tracking for sent and failed emails.
 
+![Template Management](./Frontend//public/Templates.png)
 ---
 
 ## ✨ Key Features
@@ -23,7 +24,6 @@ The backend processes the data and triggers **n8n automation**, which sends emai
 - **Quick Actions**: Duplicate campaigns, download reports, manage templates
 
 **Images (UI Preview)**
-![Template Management](./Frontend//public/Templates.png)
 ![Campaign Dashboard](./Frontend/public/UploadCampagin.png)
 
 ---
