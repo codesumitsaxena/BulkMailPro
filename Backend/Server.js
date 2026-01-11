@@ -9,6 +9,10 @@ require('dotenv').config();
 const templateRoutes = require('./routes/templateRoutes');
 const campaignRoutes = require('./routes/campaignRoutes');
 const emailRoutes = require('./routes/emailRoutes');
+const campaignClientRoutes = require('./routes/campaignClientRoutes');
+const campaignScheduleRoutes = require('./routes/campaignScheduleRoutes');
+const emailQueueRoutes = require('./routes/emailQueueRoutes');
+const campaignTrackingRoutes = require('./routes/campaignTrackingRoutes'); // ✅ NEW
 
 const app = express();
 
@@ -21,6 +25,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/templates', templateRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/emails', emailRoutes);
+app.use('/api/clients', campaignClientRoutes);
+app.use('/api/schedules', campaignScheduleRoutes);
+app.use('/api/queue', emailQueueRoutes);
+app.use('/api', campaignTrackingRoutes); // ✅ NEW - Tracking routes
 
 // Health check
 app.get('/', (req, res) => {
@@ -32,7 +40,11 @@ app.get('/', (req, res) => {
     endpoints: {
       templates: '/api/templates',
       campaigns: '/api/campaigns',
-      emails: '/api/emails'
+      emails: '/api/emails',
+      clients: '/api/clients',
+      schedules: '/api/schedules',
+      queue: '/api/queue',
+      tracking: '/api/campaign/:id/tracking' // ✅ NEW
     }
   });
 });
@@ -77,16 +89,18 @@ process.on('SIGTERM', () => {
 // Start server
 const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => {
-  console.log('═══════════════════════════════════════');
+  console.log('═══════════════════════════════════════════════════════');
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🌐 API Base URL: http://localhost:${PORT}`);
-  console.log('═══════════════════════════════════════');
+  console.log('═══════════════════════════════════════════════════════');
   console.log('📡 Available Routes:');
   console.log(`   Templates:  http://localhost:${PORT}/api/templates`);
   console.log(`   Campaigns:  http://localhost:${PORT}/api/campaigns`);
   console.log(`   Emails:     http://localhost:${PORT}/api/emails`);
-  console.log('═══════════════════════════════════════');
+  console.log(`   Clients:    http://localhost:${PORT}/api/clients`);
+  console.log(`   Schedules:  http://localhost:${PORT}/api/schedules`);
+  console.log(`   Queue:      http://localhost:${PORT}/api/queue`);
+  console.log(`   📊 Tracking: http://localhost:${PORT}/api/campaign/:id/tracking`); // ✅ NEW
+  console.log('═══════════════════════════════════════════════════════');
 });
-
-module.exports = app;

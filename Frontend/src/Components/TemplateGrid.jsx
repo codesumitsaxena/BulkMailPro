@@ -4,13 +4,12 @@ import { ChevronLeft, ChevronRight, Edit3 } from 'lucide-react';
 function TemplateGrid({ templates, onEdit }) {
   const [currentPage, setCurrentPage] = useState(0);
   const templatesPerPage = 4;
-  const templateEntries = Object.entries(templates);
-  const totalPages = Math.ceil(templateEntries.length / templatesPerPage);
+  const totalPages = Math.ceil(templates.length / templatesPerPage);
 
   const getCurrentTemplates = () => {
     const start = currentPage * templatesPerPage;
     const end = start + templatesPerPage;
-    return templateEntries.slice(start, end);
+    return templates.slice(start, end);
   };
 
   const goToNextPage = () => {
@@ -21,31 +20,41 @@ function TemplateGrid({ templates, onEdit }) {
     setCurrentPage((prev) => (prev - 1 + totalPages) % totalPages);
   };
 
+  if (templates.length === 0) {
+    return (
+      <div className="text-center py-12 bg-white rounded-xl border-2 border-dashed border-slate-200">
+        <div className="text-6xl mb-4">📭</div>
+        <p className="text-slate-500 font-semibold">No templates found</p>
+        <p className="text-sm text-slate-400 mt-2">Create your first template to get started</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Templates Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        {getCurrentTemplates().map(([key, template]) => (
+        {getCurrentTemplates().map((template) => (
           <div
-            key={key}
+            key={template.id}
             className="p-4 sm:p-6 bg-slate-50 rounded-xl sm:rounded-2xl border-2 border-slate-200 hover:border-indigo-300 transition-all group relative"
           >
             <div className="flex items-start gap-3 sm:gap-4 mb-3 sm:mb-4">
-              <span className="text-2xl sm:text-4xl flex-shrink-0">{template.icon}</span>
+              <span className="text-2xl sm:text-4xl flex-shrink-0">📧</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-bold text-base sm:text-lg text-slate-900 line-clamp-2">
                     {template.name}
                   </h3>
                   <button
-                    onClick={() => onEdit(key)}
+                    onClick={() => onEdit(template.id)}
                     className="p-1.5 sm:p-2 bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-200 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
                     title="Edit Template"
                   >
                     <Edit3 className="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                 </div>
-                <p className="text-xs sm:text-sm text-slate-500 mt-1">{template.category}</p>
+                <p className="text-xs sm:text-sm text-slate-500 mt-1">ID: {template.id}</p>
               </div>
             </div>
             <div className="space-y-2 sm:space-y-3">
@@ -58,7 +67,7 @@ function TemplateGrid({ templates, onEdit }) {
               <div>
                 <p className="text-xs sm:text-sm font-semibold text-slate-700 mb-1">Body Preview:</p>
                 <p className="text-[10px] sm:text-xs text-slate-600 bg-white p-2 sm:p-3 rounded-lg border border-slate-200 line-clamp-3 sm:line-clamp-4 whitespace-pre-wrap">
-                  {template.body}
+                  {template.body_template}
                 </p>
               </div>
             </div>
@@ -108,9 +117,9 @@ function TemplateGrid({ templates, onEdit }) {
         <p className="text-xs sm:text-sm text-slate-500">
           Showing <span className="font-semibold text-slate-700">{currentPage * templatesPerPage + 1}</span> to{' '}
           <span className="font-semibold text-slate-700">
-            {Math.min((currentPage + 1) * templatesPerPage, templateEntries.length)}
+            {Math.min((currentPage + 1) * templatesPerPage, templates.length)}
           </span>{' '}
-          of <span className="font-semibold text-slate-700">{templateEntries.length}</span> templates
+          of <span className="font-semibold text-slate-700">{templates.length}</span> templates
         </p>
       </div>
     </div>
