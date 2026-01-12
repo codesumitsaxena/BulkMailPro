@@ -16,7 +16,7 @@ function CampaignDetailTable({ campaignId }) {
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const perPage = 6;
+  const perPage = 15;
 
   const API_BASE = "http://localhost:5000/api";
 
@@ -146,7 +146,7 @@ function CampaignDetailTable({ campaignId }) {
   if (rows.length === 0) {
     return (
       <div className="bg-white rounded-2xl shadow border overflow-hidden">
-        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-4">
+        <div className="bg-gradient-to-br from-indigo-600 to-blue-500 text-white px-6 py-4">
           <div className="flex items-start justify-between">
             <div>
               <h3 className="text-lg font-bold">{campaign.name}</h3>
@@ -177,7 +177,7 @@ function CampaignDetailTable({ campaignId }) {
   return (
     <div className="bg-white rounded-xl shadow border overflow-hidden">
       {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-3">
+      <div className="bg-gradient-to-br from-indigo-600 to-blue-500 text-white px-4 py-3">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold">{campaign.name}</h3>

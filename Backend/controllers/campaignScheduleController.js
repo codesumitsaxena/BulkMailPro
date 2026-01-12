@@ -1,19 +1,133 @@
 // controllers/campaignScheduleController.js
 const CampaignSchedule = require('../models/CampaignSchedule');
+const CampaignClient = require('../models/CampaignClient');
+const TemplateModel = require('../models/templateModel');
+const EmailQueue = require('../models/EmailQueue');
 
-// Create a new schedule
+// Create a new schedule AND populate email_queue
 exports.createSchedule = async (req, res) => {
   try {
+    const { campaign_id, schedule_date, template_id, start_row, end_row, status } = req.body;
+
+    // ✅ Step 1: Validation
+    if (!campaign_id || !schedule_date || !template_id || !start_row || !end_row) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields are required: campaign_id, schedule_date, template_id, start_row, end_row'
+      });
+    }
+
+    // Validate row range
+    if (parseInt(start_row) > parseInt(end_row)) {
+      return res.status(400).json({
+        success: false,
+        message: 'start_row cannot be greater than end_row'
+      });
+    }
+
+    console.log(`\n🚀 Creating schedule for campaign ${campaign_id}`);
+    console.log(`📅 Schedule Date: ${schedule_date}`);
+    console.log(`📝 Template ID: ${template_id}`);
+    console.log(`📊 Row Range: ${start_row} - ${end_row}`);
+
+    // ✅ Step 2: Create Schedule Entry
     const scheduleId = await CampaignSchedule.create(req.body);
+    console.log(`✅ Schedule created with ID: ${scheduleId}`);
+
+    // ✅ Step 3: Fetch Template Details
+    const template = await TemplateModel.getById(template_id);
+    
+    if (!template) {
+      // Rollback: Delete the created schedule if template not found
+      await CampaignSchedule.delete(scheduleId);
+      return res.status(404).json({
+        success: false,
+        message: `Template with ID ${template_id} not found`
+      });
+    }
+
+    console.log(`📝 Template loaded: "${template.name}"`);
+    console.log(`📧 Subject: "${template.subject}"`);
+
+    // ✅ Step 4: Fetch Clients for Row Range
+    const clients = await CampaignClient.findByRowRange(campaign_id, start_row, end_row);
+    
+    if (!clients || clients.length === 0) {
+      console.warn(`⚠️ No clients found for campaign ${campaign_id} between rows ${start_row}-${end_row}`);
+      return res.status(201).json({
+        success: true,
+        message: 'Schedule created but no clients found in this row range',
+        data: {
+          schedule: await CampaignSchedule.findById(scheduleId),
+          emails_queued: 0,
+          clients_count: 0
+        }
+      });
+    }
+
+    console.log(`👥 Found ${clients.length} clients to process`);
+
+    // ✅ Step 5: Prepare Email Queue Data (WITHOUT body_text)
+    const emailQueueData = clients.map(client => ({
+      campaign_id: campaign_id,
+      schedule_id: scheduleId,
+      client_id: client.id,
+      template_id: template_id,
+      client_name: client.client_name,
+      client_email: client.client_email,
+      subject: template.subject || 'No Subject',
+      body_html: template.body_template || '<p>No Content</p>',
+      // ❌ REMOVED: body_text (column doesn't exist in database)
+      scheduled_at: schedule_date,
+      status: 'pending',
+      max_retries: 3
+    }));
+
+    console.log(`📦 Prepared ${emailQueueData.length} email queue entries`);
+
+    // ✅ Step 6: Bulk Insert into Email Queue
+    const emailQueueResult = await EmailQueue.bulkCreate(emailQueueData);
+    
+    if (!emailQueueResult || emailQueueResult.affectedRows === 0) {
+      console.error('❌ Failed to insert emails into queue');
+      return res.status(500).json({
+        success: false,
+        message: 'Schedule created but failed to queue emails',
+        data: {
+          schedule: await CampaignSchedule.findById(scheduleId),
+          error: 'Bulk insert returned 0 affected rows'
+        }
+      });
+    }
+
+    console.log(`✅ Successfully queued ${emailQueueResult.affectedRows} emails`);
+
+    // ✅ Step 7: Verify counts match
+    if (emailQueueResult.affectedRows !== clients.length) {
+      console.warn(`⚠️ Warning: Queued ${emailQueueResult.affectedRows} emails but found ${clients.length} clients`);
+    }
+
+    // ✅ Step 8: Return Success Response
     const schedule = await CampaignSchedule.findById(scheduleId);
     
+    console.log(`\n🎉 Schedule ${scheduleId} created successfully!`);
+    console.log(`📊 Summary: ${emailQueueResult.affectedRows} emails queued from ${clients.length} clients\n`);
+
     res.status(201).json({
       success: true,
-      message: 'Schedule created successfully',
-      data: schedule
+      message: `Schedule created and ${emailQueueResult.affectedRows} emails queued successfully`,
+      data: {
+        schedule,
+        emails_queued: emailQueueResult.affectedRows,
+        clients_count: clients.length,
+        template_name: template.name,
+        row_range: `${start_row}-${end_row}`
+      }
     });
+
   } catch (error) {
-    console.error('Error creating schedule:', error);
+    console.error('\n❌ Error creating schedule:', error.message);
+    console.error(error.stack);
     res.status(500).json({
       success: false,
       message: 'Error creating schedule',

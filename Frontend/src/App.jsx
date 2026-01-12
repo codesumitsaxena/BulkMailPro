@@ -261,7 +261,7 @@ function App() {
 
           {/* Templates View */}
           {view === 'templates' && (
-            <div className="bg-white rounded-2xl p-8 shadow-lg border border-slate-200">
+            <div className="bg-white rounded-2xl h-[87vh] p-8 shadow-lg border border-slate-200">
               <div className="flex items-center justify-between mb-8">
                 <div>
                   <h2 className="text-2xl font-black text-slate-900">

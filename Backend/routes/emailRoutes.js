@@ -5,13 +5,10 @@ const path = require('path');
 const fs = require('fs');
 const emailController = require('../controllers/emailController');
 
-// Create uploads directory if not exists
 const uploadDir = './uploads';
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
-
-// Configure multer for CSV upload
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);

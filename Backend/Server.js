@@ -1,5 +1,5 @@
 // =====================================================
-// FILE: server.js (UPDATED)
+// FILE: server.js (FIXED)
 // =====================================================
 const express = require('express');
 const cors = require('cors');
@@ -12,7 +12,7 @@ const emailRoutes = require('./routes/emailRoutes');
 const campaignClientRoutes = require('./routes/campaignClientRoutes');
 const campaignScheduleRoutes = require('./routes/campaignScheduleRoutes');
 const emailQueueRoutes = require('./routes/emailQueueRoutes');
-const campaignTrackingRoutes = require('./routes/campaignTrackingRoutes'); // ✅ NEW
+const campaignTrackingRoutes = require('./routes/campaignTrackingRoutes');
 
 const app = express();
 
@@ -21,6 +21,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Request logging middleware (helpful for debugging)
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
+
 // Routes
 app.use('/api/templates', templateRoutes);
 app.use('/api/campaigns', campaignRoutes);
@@ -28,7 +34,8 @@ app.use('/api/emails', emailRoutes);
 app.use('/api/clients', campaignClientRoutes);
 app.use('/api/schedules', campaignScheduleRoutes);
 app.use('/api/queue', emailQueueRoutes);
-app.use('/api', campaignTrackingRoutes); // ✅ NEW - Tracking routes
+app.use('/api/email-queue', emailQueueRoutes); // ✅ ADDED: For n8n workflow
+app.use('/api', campaignTrackingRoutes);
 
 // Health check
 app.get('/', (req, res) => {
@@ -43,8 +50,9 @@ app.get('/', (req, res) => {
       emails: '/api/emails',
       clients: '/api/clients',
       schedules: '/api/schedules',
-      queue: '/api/queue',
-      tracking: '/api/campaign/:id/tracking' // ✅ NEW
+      emailQueue: '/api/queue',
+      emailQueueAlt: '/api/email-queue', // For n8n
+      tracking: '/api/campaign/:id/tracking'
     }
   });
 });
@@ -95,12 +103,16 @@ const server = app.listen(PORT, () => {
   console.log(`🌐 API Base URL: http://localhost:${PORT}`);
   console.log('═══════════════════════════════════════════════════════');
   console.log('📡 Available Routes:');
-  console.log(`   Templates:  http://localhost:${PORT}/api/templates`);
-  console.log(`   Campaigns:  http://localhost:${PORT}/api/campaigns`);
-  console.log(`   Emails:     http://localhost:${PORT}/api/emails`);
-  console.log(`   Clients:    http://localhost:${PORT}/api/clients`);
-  console.log(`   Schedules:  http://localhost:${PORT}/api/schedules`);
-  console.log(`   Queue:      http://localhost:${PORT}/api/queue`);
-  console.log(`   📊 Tracking: http://localhost:${PORT}/api/campaign/:id/tracking`); // ✅ NEW
+  console.log(`   Templates:    http://localhost:${PORT}/api/templates`);
+  console.log(`   Campaigns:    http://localhost:${PORT}/api/campaigns`);
+  console.log(`   Emails:       http://localhost:${PORT}/api/emails`);
+  console.log(`   Clients:      http://localhost:${PORT}/api/clients`);
+  console.log(`   Schedules:    http://localhost:${PORT}/api/schedules`);
+  console.log(`   Email Queue:  http://localhost:${PORT}/api/email-queue`); // ✅ FIXED
+  console.log(`   📊 Tracking:  http://localhost:${PORT}/api/campaign/:id/tracking`);
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('🔗 n8n Integration:');
+  console.log(`   Pending Emails: http://localhost:${PORT}/api/email-queue/pending/ready`);
+  console.log(`   Mark Sent:      PATCH http://localhost:${PORT}/api/email-queue/:id/sent`);
   console.log('═══════════════════════════════════════════════════════');
 });

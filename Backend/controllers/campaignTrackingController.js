@@ -1,12 +1,8 @@
-// controllers/campaignTrackingController.js
 const db = require('../config/db');
 
-// Main tracking endpoint - returns formatted data for frontend table
 const getCampaignTracking = async (req, res) => {
   try {
     const { campaignId } = req.params;
-    
-    // 1. Get campaign details
     const campaignQuery = `
       SELECT 
         id,
@@ -39,7 +35,6 @@ const getCampaignTracking = async (req, res) => {
       dates.push(d.toISOString().split('T')[0]);
     }
     
-    // 3. Get all clients with their scheduled dates and status
     const trackingQuery = `
       SELECT 
         cc.id as client_id,
