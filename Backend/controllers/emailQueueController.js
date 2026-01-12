@@ -112,6 +112,9 @@ const getPendingEmails = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 100;
     const emails = await EmailQueue.getPendingEmails(limit);
+    
+    console.log(`✅ Found ${emails.length} pending emails`);
+    
     res.json({ 
       success: true, 
       data: emails,
@@ -127,11 +130,13 @@ const getPendingEmails = async (req, res) => {
   }
 };
 
-// NEW: Endpoint specifically for n8n workflow
+// For n8n workflow - structured response
 const getPendingReadyEmails = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 100;
     const emails = await EmailQueue.getPendingEmails(limit);
+    
+    console.log(`✅ [n8n] Found ${emails.length} pending ready emails`);
     
     res.json({ 
       success: true, 
@@ -183,6 +188,8 @@ const markEmailSent = async (req, res) => {
       });
     }
     
+    console.log(`✅ Email ${req.params.id} marked as sent`);
+    
     res.json({ 
       success: true,
       message: 'Email marked as sent'
@@ -220,6 +227,8 @@ const markEmailFailed = async (req, res) => {
         message: 'Email not found'
       });
     }
+    
+    console.log(`❌ Email ${req.params.id} marked as failed: ${error_message}`);
     
     res.json({ 
       success: true,
@@ -350,7 +359,7 @@ module.exports = {
   getEmailsBySchedule,
   getEmailsByCampaign,
   getPendingEmails,
-  getPendingReadyEmails,  // NEW: Add this
+  getPendingReadyEmails,
   getRetryableEmails,
   markEmailSent,
   markEmailFailed,
