@@ -72,41 +72,22 @@ exports.createSchedule = async (req, res) => {
     console.log(`📦 Preparing ${clients.length} email queue entries...`);
     console.log(`📅 Scheduled DateTime: ${scheduledDateTime}`);
 
-    const emailQueueData = clients.map(client => {
-      // 🔥 FIX 2: Generate plain text from HTML
-      let plainText = '';
-      if (template.body_template) {
-        plainText = template.body_template
-          .replace(/<br\s*\/?>/gi, '\n')
-          .replace(/<\/p>/gi, '\n\n')
-          .replace(/<\/div>/gi, '\n')
-          .replace(/<[^>]*>/g, '')
-          .replace(/&nbsp;/g, ' ')
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&quot;/g, '"')
-          .replace(/\s+/g, ' ')
-          .trim();
-      } else {
-        plainText = 'No Content';
-      }
-
-      return {
-        campaign_id: campaign_id,
-        schedule_id: scheduleId,
-        client_id: client.id,
-        template_id: template_id,
-        client_name: client.client_name,
-        client_email: client.client_email,
-        subject: template.subject || 'No Subject',
-        body_html: template.body_template || '<p>No Content</p>',
-        body_text: plainText, // ✅ Plain text version
-        scheduled_at: scheduledDateTime, // ✅ Proper DATETIME format
-        status: 'pending',
-        max_retries: 3
-      };
-    });
+   const emailQueueData = clients.map(client => {
+  return {
+    campaign_id: campaign_id,
+    schedule_id: scheduleId,
+    client_id: client.id,
+    template_id: template_id,
+    client_name: client.client_name,
+    client_email: client.client_email,
+    subject: template.subject || 'No Subject',
+    body_html: '',  
+    body_text: template.body_template || 'No Content',
+    scheduled_at: scheduledDateTime,
+    status: 'pending',
+    max_retries: 3
+  };
+});
 
     console.log(`✅ Email queue data prepared`);
     console.log(`📝 Sample body_text preview: "${emailQueueData[0]?.body_text?.substring(0, 50)}..."`);

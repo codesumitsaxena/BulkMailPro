@@ -1,5 +1,5 @@
 // =====================================================
-// FILE: server.js (FIXED)
+// FILE: server.js (UPDATED WITH N8N PROXY)
 // =====================================================
 const express = require('express');
 const cors = require('cors');
@@ -13,6 +13,7 @@ const campaignClientRoutes = require('./routes/campaignClientRoutes');
 const campaignScheduleRoutes = require('./routes/campaignScheduleRoutes');
 const emailQueueRoutes = require('./routes/emailQueueRoutes');
 const campaignTrackingRoutes = require('./routes/campaignTrackingRoutes');
+const n8nProxyRoutes = require('./routes/n8nProxyRoutes'); // ✅ NEW: N8N Proxy
 
 const app = express();
 
@@ -34,8 +35,9 @@ app.use('/api/emails', emailRoutes);
 app.use('/api/clients', campaignClientRoutes);
 app.use('/api/schedules', campaignScheduleRoutes);
 app.use('/api/queue', emailQueueRoutes);
-app.use('/api/email-queue', emailQueueRoutes); // ✅ ADDED: For n8n workflow
+app.use('/api/email-queue', emailQueueRoutes);
 app.use('/api', campaignTrackingRoutes);
+app.use('/api', n8nProxyRoutes); // ✅ NEW: N8N Proxy Routes
 
 // Health check
 app.get('/', (req, res) => {
@@ -51,8 +53,11 @@ app.get('/', (req, res) => {
       clients: '/api/clients',
       schedules: '/api/schedules',
       emailQueue: '/api/queue',
-      emailQueueAlt: '/api/email-queue', // For n8n
-      tracking: '/api/campaign/:id/tracking'
+      emailQueueAlt: '/api/email-queue',
+      tracking: '/api/campaign/:id/tracking',
+      n8nTrigger: '/api/trigger-campaign', // ✅ NEW
+      n8nStatus: '/api/campaign-status',   // ✅ NEW
+      n8nTest: '/api/test-n8n'             // ✅ NEW
     }
   });
 });
@@ -108,11 +113,14 @@ const server = app.listen(PORT, () => {
   console.log(`   Emails:       http://localhost:${PORT}/api/emails`);
   console.log(`   Clients:      http://localhost:${PORT}/api/clients`);
   console.log(`   Schedules:    http://localhost:${PORT}/api/schedules`);
-  console.log(`   Email Queue:  http://localhost:${PORT}/api/email-queue`); // ✅ FIXED
+  console.log(`   Email Queue:  http://localhost:${PORT}/api/email-queue`);
   console.log(`   📊 Tracking:  http://localhost:${PORT}/api/campaign/:id/tracking`);
   console.log('═══════════════════════════════════════════════════════');
-  console.log('🔗 n8n Integration:');
-  console.log(`   Pending Emails: http://localhost:${PORT}/api/email-queue/pending/ready`);
-  console.log(`   Mark Sent:      PATCH http://localhost:${PORT}/api/email-queue/:id/sent`);
+  console.log('🔗 N8N Integration:');
+  console.log(`   📧 Pending Emails:   http://localhost:${PORT}/api/email-queue/pending/ready`);
+  console.log(`   ✅ Mark Sent:        PATCH http://localhost:${PORT}/api/email-queue/:id/sent`);
+  console.log(`   🚀 Trigger Campaign: POST http://localhost:${PORT}/api/trigger-campaign`);
+  console.log(`   📊 N8N Status:       GET http://localhost:${PORT}/api/campaign-status`);
+  console.log(`   🧪 Test N8N:         POST http://localhost:${PORT}/api/test-n8n`);
   console.log('═══════════════════════════════════════════════════════');
 });
