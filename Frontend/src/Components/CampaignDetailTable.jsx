@@ -43,8 +43,21 @@ function CampaignDetailTable({ campaignId }) {
       
       const { campaign, dates, clients, stats } = result.data;
       
+      // 🔥 FIX: Filter dates to only show from campaign start_date onwards
+      const campaignStartDate = campaign.start_date.split('T')[0]; // Extract date part
+      const filteredDates = dates.filter(date => date >= campaignStartDate);
+      
+      console.log('✅ Data loaded:', {
+        campaign: campaign.name,
+        originalDates: dates,
+        filteredDates: filteredDates,
+        campaignStart: campaignStartDate,
+        clients: clients.length,
+        stats
+      });
+      
       setCampaign(campaign);
-      setDates(dates);
+      setDates(filteredDates); // Use filtered dates instead of original
       
       const rowsArray = clients.map(client => ({
         name: client.client_name,
@@ -55,13 +68,6 @@ function CampaignDetailTable({ campaignId }) {
       
       setRows(rowsArray);
       setPage(1);
-      
-      console.log('✅ Data loaded:', {
-        campaign: campaign.name,
-        dates: dates.length,
-        clients: clients.length,
-        stats
-      });
       
     } catch (err) {
       console.error('❌ Error:', err);

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Layout, FileText, Calendar, AlertCircle, X, RefreshCw } from 'lucide-react';
+import { Layout, FileText, Calendar, AlertCircle, X, RefreshCw, CheckCircle, Clock } from 'lucide-react';
 
 function Sidebar({ 
   selectedCampaign, 
@@ -16,6 +16,10 @@ function Sidebar({
 
   useEffect(() => {
     fetchCampaigns();
+    
+    // Auto-refresh every 10 seconds
+    const interval = setInterval(fetchCampaigns, 100000);
+    return () => clearInterval(interval);
   }, [refreshTrigger]);
 
   const fetchCampaigns = async () => {
@@ -35,24 +39,108 @@ function Sidebar({
       const campaignsWithStats = await Promise.all(
         campaignsList.map(async (campaign) => {
           try {
+            console.log(`\n🔍 Fetching stats for campaign ${campaign.id}...`);
+            
+            // 🔥 METHOD 1: Try fetching from campaign-client endpoint
+            let totalClients = 0;
+            
+            try {
+              const clientsRes = await fetch(
+                `http://localhost:5000/api/campaign-client/campaign/${campaign.id}`
+              );
+              const clientsData = await clientsRes.json();
+              
+              console.log(`📦 Clients API response:`, clientsData);
+
+              if (clientsData.success && clientsData.data) {
+                // Try different response formats
+                if (typeof clientsData.data.total === 'number') {
+                  totalClients = clientsData.data.total;
+                } else if (Array.isArray(clientsData.data.clients)) {
+                  totalClients = clientsData.data.clients.length;
+                } else if (Array.isArray(clientsData.data)) {
+                  totalClients = clientsData.data.length;
+                } else if (clientsData.data.count) {
+                  totalClients = clientsData.data.count;
+                }
+              }
+            } catch (err) {
+              console.warn(`⚠️ Could not fetch clients from campaign-client endpoint:`, err.message);
+            }
+
+            // 🔥 METHOD 2: If totalClients is still 0, count from email_queue
+            if (totalClients === 0) {
+              try {
+                const queueRes = await fetch(
+                  `http://localhost:5000/api/email-queue/campaign/${campaign.id}`
+                );
+                const queueData = await queueRes.json();
+                
+                if (queueData.success && queueData.data) {
+                  if (Array.isArray(queueData.data)) {
+                    // Get unique client_ids
+                    const uniqueClients = new Set(queueData.data.map(email => email.client_id));
+                    totalClients = uniqueClients.size;
+                  } else if (queueData.data.count) {
+                    totalClients = queueData.data.count;
+                  }
+                }
+                
+                console.log(`📧 Email queue unique clients: ${totalClients}`);
+              } catch (err) {
+                console.warn(`⚠️ Could not fetch from email queue:`, err.message);
+              }
+            }
+
+            console.log(`✅ Total clients for campaign ${campaign.id}: ${totalClients}`);
+
+            // Fetch email queue stats
             const statsRes = await fetch(
-              `http://localhost:5000/api/queue/campaign/${campaign.id}/stats`
+              `http://localhost:5000/api/email-queue/stats/campaign/${campaign.id}`
             );
             const statsData = await statsRes.json();
-
-            const clientsRes = await fetch(
-              `http://localhost:5000/api/clients/campaign/${campaign.id}`
-            );
-            const clientsData = await clientsRes.json();
-
-            const totalClients = clientsData.success && clientsData.data ? 
-              (clientsData.data.total || clientsData.data.clients?.length || 0) : 0;
             
             const sent = statsData.success ? (statsData.data.sent || 0) : 0;
             const pending = statsData.success ? (statsData.data.pending || 0) : 0;
             const failed = statsData.success ? (statsData.data.failed || 0) : 0;
 
-            console.log(`Campaign ${campaign.id}: Total=${totalClients}, Sent=${sent}, Pending=${pending}, Failed=${failed}`);
+            console.log(`📊 Stats - Sent: ${sent}, Pending: ${pending}, Failed: ${failed}`);
+
+            // Fetch schedule status
+            let scheduleStatus = 'Not Started';
+            let scheduleCount = { pending: 0, completed: 0 };
+            
+            try {
+              const schedulesRes = await fetch(
+                `http://localhost:5000/api/campaign-schedule/campaign/${campaign.id}`
+              );
+              const schedulesData = await schedulesRes.json();
+              
+              if (schedulesData.success && schedulesData.data && schedulesData.data.schedules) {
+                const schedules = schedulesData.data.schedules;
+                scheduleCount.pending = schedules.filter(s => s.status === 'pending').length;
+                scheduleCount.completed = schedules.filter(s => s.status === 'completed').length;
+                
+                if (schedules.length === 0) {
+                  scheduleStatus = 'Not Started';
+                } else if (scheduleCount.completed > 0 && scheduleCount.pending === 0) {
+                  scheduleStatus = 'Completed';
+                } else if (scheduleCount.pending > 0 || sent > 0) {
+                  scheduleStatus = 'In Progress';
+                } else {
+                  scheduleStatus = 'Not Started';
+                }
+              }
+            } catch (err) {
+              console.warn(`Could not fetch schedules for campaign ${campaign.id}`);
+            }
+
+            // Calculate completion percentage
+            const completionPercent = totalClients > 0 
+              ? Math.round((sent / totalClients) * 100) 
+              : 0;
+
+            console.log(`📈 Completion: ${completionPercent}% (${sent}/${totalClients})\n`);
 
             return {
               campaign_id: campaign.id,
@@ -63,10 +151,13 @@ function Sidebar({
               sent: sent,
               pending: pending,
               failed: failed,
+              scheduleStatus: scheduleStatus,
+              scheduleCount: scheduleCount,
+              completionPercent: completionPercent,
               created_at: campaign.created_at,
             };
           } catch (err) {
-            console.error(`Error fetching stats for campaign ${campaign.id}:`, err);
+            console.error(`❌ Error fetching stats for campaign ${campaign.id}:`, err);
             return {
               campaign_id: campaign.id,
               campaign_name: campaign.campaign_name,
@@ -76,6 +167,9 @@ function Sidebar({
               sent: 0,
               pending: 0,
               failed: 0,
+              scheduleStatus: 'Not Started',
+              scheduleCount: { pending: 0, completed: 0 },
+              completionPercent: 0,
               created_at: campaign.created_at,
             };
           }
@@ -87,7 +181,14 @@ function Sidebar({
       );
 
       setCampaigns(campaignsWithStats);
-      console.log('✅ Campaigns loaded:', campaignsWithStats.length);
+      
+      console.log('✅ All campaigns loaded:', campaignsWithStats.map(c => ({
+        id: c.campaign_id,
+        name: c.campaign_name,
+        total: c.total,
+        sent: c.sent,
+        completion: `${c.completionPercent}%`
+      })));
 
       if (!selectedCampaign && campaignsWithStats.length > 0) {
         onSelectCampaign(campaignsWithStats[0].campaign_id);
@@ -101,6 +202,32 @@ function Sidebar({
     }
   };
 
+  // Status Badge Component
+  const StatusBadge = ({ status }) => {
+    if (status === 'Completed') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold">
+          <CheckCircle className="w-3 h-3" />
+          Completed
+        </span>
+      );
+    }
+    if (status === 'In Progress') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold">
+          <Clock className="w-3 h-3" />
+          In Progress
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full text-[10px] font-bold">
+        <Calendar className="w-3 h-3" />
+        Not Started
+      </span>
+    );
+  };
+
   return (
     <>
       {/* Mobile Overlay */}
@@ -111,7 +238,7 @@ function Sidebar({
         ></div>
       )}
 
-      {/* Sidebar - Fixed Position */}
+      {/* Sidebar */}
       <div className={`
         fixed inset-y-0 left-0 top-20 z-40
         w-80 bg-white border-r border-slate-200 
@@ -173,7 +300,7 @@ function Sidebar({
               <button
                 onClick={fetchCampaigns}
                 disabled={isLoading}
-                className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+                className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
                 title="Refresh campaigns"
               >
                 <RefreshCw className={`w-4 h-4 text-slate-500 ${isLoading ? 'animate-spin' : ''}`} />
@@ -214,8 +341,6 @@ function Sidebar({
 
             {/* Campaigns List */}
             {!isLoading && !error && campaigns.map((camp) => {
-              const completionPercent = camp.total > 0 ? Math.round((camp.sent / camp.total) * 100) : 0;
-              
               return (
                 <button
                   key={camp.campaign_id}
@@ -225,7 +350,7 @@ function Sidebar({
                   }}
                   className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
                     selectedCampaign === camp.campaign_id
-                      ? 'border-indigo-600 bg-indigo-50 shadow-md'
+                      ? 'border-indigo-600 bg-indigo-50 shadow-lg'
                       : 'border-slate-200 hover:border-indigo-300 bg-white hover:shadow-md'
                   }`}
                 >
@@ -238,6 +363,11 @@ function Sidebar({
                       #{camp.campaign_id}
                     </span>
                   </div>
+
+                  {/* Status Badge */}
+                  <div className="mb-3">
+                    <StatusBadge status={camp.scheduleStatus} />
+                  </div>
                   
                   {/* Stats Grid */}
                   <div className="grid grid-cols-4 gap-2 mb-3">
@@ -245,7 +375,7 @@ function Sidebar({
                       <div className="text-sm font-black text-slate-700">
                         {camp.total}
                       </div>
-                      <div className="text-[9px] text-slate-500 font-semibold">
+                      <div className="text-[9px] text-slate-500 font-semibold uppercase">
                         Total
                       </div>
                     </div>
@@ -253,7 +383,7 @@ function Sidebar({
                       <div className="text-sm font-black text-emerald-700">
                         {camp.sent}
                       </div>
-                      <div className="text-[9px] text-emerald-600 font-semibold">
+                      <div className="text-[9px] text-emerald-600 font-semibold uppercase">
                         Sent
                       </div>
                     </div>
@@ -261,33 +391,33 @@ function Sidebar({
                       <div className="text-sm font-black text-amber-700">
                         {camp.pending}
                       </div>
-                      <div className="text-[9px] text-amber-600 font-semibold">
-                        Queue
+                      <div className="text-[9px] text-amber-600 font-semibold uppercase">
+                        Pending
                       </div>
                     </div>
                     <div className="bg-rose-100 rounded-lg p-2 text-center">
                       <div className="text-sm font-black text-rose-700">
                         {camp.failed}
                       </div>
-                      <div className="text-[9px] text-rose-600 font-semibold">
+                      <div className="text-[9px] text-rose-600 font-semibold uppercase">
                         Failed
                       </div>
                     </div>
                   </div>
 
                   {/* Progress Bar */}
-                  <div>
-                    <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                  <div className="mb-3">
+                    <div className="h-2.5 w-full bg-slate-200 rounded-full overflow-hidden shadow-inner">
                       <div 
-                        className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 transition-all duration-500"
-                        style={{ width: `${completionPercent}%` }}
+                        className="h-full bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-500 transition-all duration-700 ease-out shadow-sm"
+                        style={{ width: `${camp.completionPercent}%` }}
                       ></div>
                     </div>
                     <div className="flex items-center justify-between text-xs mt-2">
                       <span className="text-slate-700 font-bold">
-                        {completionPercent}% Complete
+                        {camp.completionPercent}% Complete
                       </span>
-                      <span className="text-slate-500 font-medium">
+                      <span className="text-slate-500 font-semibold">
                         {camp.sent}/{camp.total}
                       </span>
                     </div>
@@ -295,10 +425,18 @@ function Sidebar({
 
                   {/* Date Range */}
                   {camp.start_date && camp.end_date && (
-                    <div className="text-xs text-slate-500 flex items-center gap-1 pt-3 mt-3 border-t border-slate-200">
-                      <Calendar className="w-3 h-3 flex-shrink-0" />
+                    <div className="text-xs text-slate-500 flex items-center gap-1.5 pt-3 border-t border-slate-200">
+                      <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
                       <span className="truncate">
-                        {new Date(camp.start_date).toLocaleDateString('en-GB')} - {new Date(camp.end_date).toLocaleDateString('en-GB')}
+                        {new Date(camp.start_date).toLocaleDateString('en-GB', { 
+                          day: '2-digit', 
+                          month: '2-digit', 
+                          year: 'numeric' 
+                        })} - {new Date(camp.end_date).toLocaleDateString('en-GB', { 
+                          day: '2-digit', 
+                          month: '2-digit', 
+                          year: 'numeric' 
+                        })}
                       </span>
                     </div>
                   )}

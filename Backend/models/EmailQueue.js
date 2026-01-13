@@ -1,10 +1,19 @@
 const db = require('../config/db');
+const { htmlToText } = require('../utils/htmlToText');
 
 class EmailQueue {
 
+  /* ================= CREATE ================= */
+
   static async create(data) {
+    if (!data.scheduled_at) {
+      throw new Error('scheduled_at is required');
+    }
+
+    const bodyText = data.body_text || htmlToText(data.body_html);
+
     const query = `
-      INSERT INTO Email_Queue 
+      INSERT INTO email_queue
       (campaign_id, schedule_id, client_id, template_id, client_name, client_email,
        subject, body_html, body_text, status, scheduled_at, max_retries)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -19,9 +28,9 @@ class EmailQueue {
       data.client_email,
       data.subject,
       data.body_html,
-      data.body_text || null,
+      bodyText,
       data.status || 'pending',
-      data.scheduled_at || new Date(), // Default to NOW if not provided
+      data.scheduled_at,
       data.max_retries || 3
     ]);
 
@@ -32,7 +41,7 @@ class EmailQueue {
     if (!emails.length) throw new Error('No emails to insert');
 
     const query = `
-      INSERT INTO Email_Queue
+      INSERT INTO email_queue
       (campaign_id, schedule_id, client_id, template_id, client_name, client_email,
        subject, body_html, body_text, status, scheduled_at, max_retries)
       VALUES ?
@@ -47,9 +56,9 @@ class EmailQueue {
       e.client_email,
       e.subject,
       e.body_html,
-      e.body_text || null,
+      e.body_text || htmlToText(e.body_html),
       e.status || 'pending',
-      e.scheduled_at || new Date(), // Default to NOW
+      e.scheduled_at || new Date(), // ✅ SAFE DEFAULT
       e.max_retries || 3
     ]);
 
@@ -57,169 +66,180 @@ class EmailQueue {
     return result;
   }
 
+  /* ================= FETCH ================= */
+
   static async findById(id) {
     const [rows] = await db.execute(
-      'SELECT * FROM Email_Queue WHERE id = ?',
+      'SELECT * FROM email_queue WHERE id = ?',
       [id]
     );
     return rows[0];
   }
 
-  static async findByScheduleId(scheduleId, filters = {}) {
-    let query = 'SELECT * FROM Email_Queue WHERE schedule_id = ?';
+  static async findByScheduleId(scheduleId, { status, limit } = {}) {
+    let sql = 'SELECT * FROM email_queue WHERE schedule_id = ?';
     const params = [scheduleId];
 
-    if (filters.status) {
-      query += ' AND status = ?';
-      params.push(filters.status);
+    if (status) {
+      sql += ' AND status = ?';
+      params.push(status);
     }
 
-    query += ' ORDER BY created_at DESC';
+    sql += ' ORDER BY created_at DESC';
 
-    if (filters.limit) {
-      query += ' LIMIT ?';
-      params.push(parseInt(filters.limit));
+    if (limit) {
+      sql += ' LIMIT ?';
+      params.push(Number(limit));
     }
 
-    const [rows] = await db.execute(query, params);
+    const [rows] = await db.execute(sql, params);
     return rows;
   }
 
-  static async findByCampaignId(campaignId, filters = {}) {
-    let query = 'SELECT * FROM Email_Queue WHERE campaign_id = ?';
+  static async findByCampaignId(campaignId, { status, limit } = {}) {
+    let sql = 'SELECT * FROM email_queue WHERE campaign_id = ?';
     const params = [campaignId];
 
-    if (filters.status) {
-      query += ' AND status = ?';
-      params.push(filters.status);
+    if (status) {
+      sql += ' AND status = ?';
+      params.push(status);
     }
 
-    query += ' ORDER BY created_at DESC';
+    sql += ' ORDER BY created_at DESC';
 
-    if (filters.limit) {
-      query += ' LIMIT ?';
-      params.push(parseInt(filters.limit));
+    if (limit) {
+      sql += ' LIMIT ?';
+      params.push(Number(limit));
     }
 
-    const [rows] = await db.execute(query, params);
+    const [rows] = await db.execute(sql, params);
     return rows;
   }
 
+  /* ================= QUEUE LOGIC ================= */
+
   static async getPendingEmails(limit = 100) {
-    const query = `
-      SELECT * FROM Email_Queue
+    const [rows] = await db.query(`
+      SELECT * FROM email_queue
       WHERE status = 'pending'
-      AND scheduled_at <= NOW()
-      AND retry_count < max_retries
+        AND scheduled_at <= NOW()
+        AND retry_count < max_retries
       ORDER BY scheduled_at ASC
       LIMIT ?
-    `;
-    const [rows] = await db.query(query, [Number(limit)]);
+    `, [Number(limit)]);
+
     return rows;
   }
 
   static async getRetryableEmails(limit = 50) {
-    const query = `
-      SELECT * FROM Email_Queue
+    const [rows] = await db.query(`
+      SELECT * FROM email_queue
       WHERE status = 'failed'
-      AND retry_count < max_retries
+        AND retry_count < max_retries
       ORDER BY updated_at ASC
       LIMIT ?
-    `;
-    const [rows] = await db.query(query, [Number(limit)]);
+    `, [Number(limit)]);
+
     return rows;
   }
 
+  /* ================= STATS ================= */
+
   static async getStatsBySchedule(scheduleId) {
-    const query = `
+    const [rows] = await db.execute(`
       SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-      FROM Email_Queue
+        COUNT(*) AS total,
+        SUM(status='pending') AS pending,
+        SUM(status='sent') AS sent,
+        SUM(status='failed') AS failed
+      FROM email_queue
       WHERE schedule_id = ?
-    `;
-    const [rows] = await db.execute(query, [scheduleId]);
+    `, [scheduleId]);
+
     return rows[0];
   }
 
   static async getStatsByCampaign(campaignId) {
-    const query = `
+    const [rows] = await db.execute(`
       SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-      FROM Email_Queue
+        COUNT(*) AS total,
+        SUM(status='pending') AS pending,
+        SUM(status='sent') AS sent,
+        SUM(status='failed') AS failed
+      FROM email_queue
       WHERE campaign_id = ?
-    `;
-    const [rows] = await db.execute(query, [campaignId]);
+    `, [campaignId]);
+
     return rows[0];
   }
 
-  static async updateStatus(id, status, extra = {}) {
-    const fields = ['status = ?'];
-    const values = [status];
+  static async getGlobalStats() {
+    const [rows] = await db.query(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(status='pending') AS pending,
+        SUM(status='sent') AS sent,
+        SUM(status='failed') AS failed,
+        SUM(retry_count > 0 AND status='failed') AS retry
+      FROM email_queue
+    `);
 
-    if (extra.sent_at) {
-      fields.push('sent_at = ?');
-      values.push(extra.sent_at);
-    }
-    if (extra.message_id) {
-      fields.push('message_id = ?');
-      values.push(extra.message_id);
-    }
-    if (extra.error_message) {
-      fields.push('error_message = ?');
-      values.push(extra.error_message);
-    }
-    if (extra.error_code) {
-      fields.push('error_code = ?');
-      values.push(extra.error_code);
-    }
-
-    values.push(id);
-
-    const query = `UPDATE Email_Queue SET ${fields.join(', ')} WHERE id = ?`;
-    const [res] = await db.execute(query, values);
-    return res.affectedRows > 0;
+    return rows[0];
   }
 
-  static async incrementRetry(id) {
+  /* ================= STATUS UPDATES ================= */
+
+  static async markSent(id, messageId = null) {
+    const CampaignSchedule = require('./CampaignSchedule');
+
+    const email = await this.findById(id);
+    if (!email) return false;
+
     const [res] = await db.execute(
-      'UPDATE Email_Queue SET retry_count = retry_count + 1 WHERE id = ?',
-      [id]
+      `UPDATE email_queue
+       SET status='sent', sent_at=NOW(), message_id=?
+       WHERE id=? AND status!='sent'`,
+      [messageId, id]
     );
-    return res.affectedRows > 0;
+
+    if (!res.affectedRows) return false;
+
+    if (email.schedule_id) {
+      const stats = await this.getStatsBySchedule(email.schedule_id);
+      if (stats.pending === 0 && stats.failed === 0 && stats.sent > 0) {
+        await CampaignSchedule.updateStatus(email.schedule_id, 'completed');
+      }
+    }
+
+    return true;
   }
 
   static async markFailed(id, msg, code = null) {
-    const query = `
-      UPDATE Email_Queue
-      SET status='failed', error_message=?, error_code=?, retry_count=retry_count+1
+    const [res] = await db.execute(`
+      UPDATE email_queue
+      SET status='failed',
+          error_message=?,
+          error_code=?,
+          retry_count=retry_count+1
       WHERE id=?
-    `;
-    const [res] = await db.execute(query, [msg, code, id]);
+    `, [msg, code, id]);
+
     return res.affectedRows > 0;
   }
 
-  static async markSent(id, messageId = null) {
+  /* ================= DELETE ================= */
+
+  static async deleteById(id) {
     const [res] = await db.execute(
-      `UPDATE Email_Queue SET status='sent', sent_at=NOW(), message_id=? WHERE id=?`,
-      [messageId, id]
+      'DELETE FROM email_queue WHERE id=?',
+      [id]
     );
-    return res.affectedRows > 0;
-  }
-
-  static async delete(id) {
-    const [res] = await db.execute('DELETE FROM Email_Queue WHERE id = ?', [id]);
     return res.affectedRows > 0;
   }
 
   static async deleteBySchedule(scheduleId) {
     const [res] = await db.execute(
-      'DELETE FROM Email_Queue WHERE schedule_id = ?',
+      'DELETE FROM email_queue WHERE schedule_id=?',
       [scheduleId]
     );
     return res.affectedRows;

@@ -1,4 +1,3 @@
-// controllers/campaignScheduleController.js
 const CampaignSchedule = require('../models/CampaignSchedule');
 const CampaignClient = require('../models/CampaignClient');
 const TemplateModel = require('../models/templateModel');
@@ -38,7 +37,6 @@ exports.createSchedule = async (req, res) => {
     const template = await TemplateModel.getById(template_id);
     
     if (!template) {
-      // Rollback: Delete the created schedule if template not found
       await CampaignSchedule.delete(scheduleId);
       return res.status(404).json({
         success: false,
@@ -67,23 +65,51 @@ exports.createSchedule = async (req, res) => {
 
     console.log(`👥 Found ${clients.length} clients to process`);
 
-    // ✅ Step 5: Prepare Email Queue Data (WITHOUT body_text)
-    const emailQueueData = clients.map(client => ({
-      campaign_id: campaign_id,
-      schedule_id: scheduleId,
-      client_id: client.id,
-      template_id: template_id,
-      client_name: client.client_name,
-      client_email: client.client_email,
-      subject: template.subject || 'No Subject',
-      body_html: template.body_template || '<p>No Content</p>',
-      // ❌ REMOVED: body_text (column doesn't exist in database)
-      scheduled_at: schedule_date,
-      status: 'pending',
-      max_retries: 3
-    }));
+    // ✅ Step 5: Prepare Email Queue Data
+    // 🔥 FIX 1: Convert DATE to DATETIME format (YYYY-MM-DD HH:MM:SS)
+    const scheduledDateTime = `${schedule_date} 00:00:00`;
+    
+    console.log(`📦 Preparing ${clients.length} email queue entries...`);
+    console.log(`📅 Scheduled DateTime: ${scheduledDateTime}`);
 
-    console.log(`📦 Prepared ${emailQueueData.length} email queue entries`);
+    const emailQueueData = clients.map(client => {
+      // 🔥 FIX 2: Generate plain text from HTML
+      let plainText = '';
+      if (template.body_template) {
+        plainText = template.body_template
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/p>/gi, '\n\n')
+          .replace(/<\/div>/gi, '\n')
+          .replace(/<[^>]*>/g, '')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/\s+/g, ' ')
+          .trim();
+      } else {
+        plainText = 'No Content';
+      }
+
+      return {
+        campaign_id: campaign_id,
+        schedule_id: scheduleId,
+        client_id: client.id,
+        template_id: template_id,
+        client_name: client.client_name,
+        client_email: client.client_email,
+        subject: template.subject || 'No Subject',
+        body_html: template.body_template || '<p>No Content</p>',
+        body_text: plainText, // ✅ Plain text version
+        scheduled_at: scheduledDateTime, // ✅ Proper DATETIME format
+        status: 'pending',
+        max_retries: 3
+      };
+    });
+
+    console.log(`✅ Email queue data prepared`);
+    console.log(`📝 Sample body_text preview: "${emailQueueData[0]?.body_text?.substring(0, 50)}..."`);
 
     // ✅ Step 6: Bulk Insert into Email Queue
     const emailQueueResult = await EmailQueue.bulkCreate(emailQueueData);
@@ -111,7 +137,8 @@ exports.createSchedule = async (req, res) => {
     const schedule = await CampaignSchedule.findById(scheduleId);
     
     console.log(`\n🎉 Schedule ${scheduleId} created successfully!`);
-    console.log(`📊 Summary: ${emailQueueResult.affectedRows} emails queued from ${clients.length} clients\n`);
+    console.log(`📊 Summary: ${emailQueueResult.affectedRows} emails queued from ${clients.length} clients`);
+    console.log(`📅 Scheduled for: ${scheduledDateTime}\n`);
 
     res.status(201).json({
       success: true,
@@ -121,7 +148,8 @@ exports.createSchedule = async (req, res) => {
         emails_queued: emailQueueResult.affectedRows,
         clients_count: clients.length,
         template_name: template.name,
-        row_range: `${start_row}-${end_row}`
+        row_range: `${start_row}-${end_row}`,
+        scheduled_date: scheduledDateTime
       }
     });
 
@@ -188,7 +216,7 @@ exports.getSchedulesByCampaign = async (req, res) => {
 exports.getSchedulesByStatus = async (req, res) => {
   try {
     const { status } = req.params;
-    const validStatuses = ['pending', 'processing', 'completed', 'failed', 'cancelled'];
+    const validStatuses = ['pending', 'completed'];
     
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
@@ -220,7 +248,7 @@ exports.getSchedulesByStatus = async (req, res) => {
 // Get pending schedules for today
 exports.getPendingToday = async (req, res) => {
   try {
-    const schedules = await CampaignSchedule.getPendingForToday();
+    const schedules = await CampaignSchedule.getPendingToday();
     
     res.json({
       success: true,
@@ -272,7 +300,7 @@ exports.updateSchedule = async (req, res) => {
 exports.updateScheduleStatus = async (req, res) => {
   try {
     const { status } = req.body;
-    const validStatuses = ['pending', 'processing', 'completed', 'failed', 'cancelled'];
+    const validStatuses = ['pending', 'completed'];
     
     if (!status || !validStatuses.includes(status)) {
       return res.status(400).json({
@@ -281,7 +309,7 @@ exports.updateScheduleStatus = async (req, res) => {
       });
     }
     
-    const updated = await CampaignSchedule.updateStatus(req.params.id, status, req.body);
+    const updated = await CampaignSchedule.updateStatus(req.params.id, status);
     
     if (!updated) {
       return res.status(404).json({
@@ -307,58 +335,6 @@ exports.updateScheduleStatus = async (req, res) => {
   }
 };
 
-// Increment email sent counter
-exports.incrementEmailSent = async (req, res) => {
-  try {
-    const updated = await CampaignSchedule.incrementEmailSent(req.params.id);
-    
-    if (!updated) {
-      return res.status(404).json({
-        success: false,
-        message: 'Schedule not found'
-      });
-    }
-    
-    res.json({
-      success: true,
-      message: 'Email sent counter incremented'
-    });
-  } catch (error) {
-    console.error('Error incrementing email sent:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error incrementing email sent counter',
-      error: error.message
-    });
-  }
-};
-
-// Increment email failed counter
-exports.incrementEmailFailed = async (req, res) => {
-  try {
-    const updated = await CampaignSchedule.incrementEmailFailed(req.params.id);
-    
-    if (!updated) {
-      return res.status(404).json({
-        success: false,
-        message: 'Schedule not found'
-      });
-    }
-    
-    res.json({
-      success: true,
-      message: 'Email failed counter incremented'
-    });
-  } catch (error) {
-    console.error('Error incrementing email failed:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error incrementing email failed counter',
-      error: error.message
-    });
-  }
-};
-
 // Cancel schedule
 exports.cancelSchedule = async (req, res) => {
   try {
@@ -367,7 +343,7 @@ exports.cancelSchedule = async (req, res) => {
     if (!cancelled) {
       return res.status(404).json({
         success: false,
-        message: 'Schedule not found or cannot be cancelled (already completed/cancelled)'
+        message: 'Schedule not found or cannot be cancelled'
       });
     }
     

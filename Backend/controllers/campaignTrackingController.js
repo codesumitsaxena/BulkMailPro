@@ -3,12 +3,14 @@ const db = require('../config/db');
 const getCampaignTracking = async (req, res) => {
   try {
     const { campaignId } = req.params;
+    
+    // 🔥 FIX: Get dates as formatted strings directly from MySQL
     const campaignQuery = `
       SELECT 
         id,
         campaign_name,
-        start_date,
-        end_date,
+        DATE_FORMAT(start_date, '%Y-%m-%d') as start_date,
+        DATE_FORMAT(end_date, '%Y-%m-%d') as end_date,
         total_clients,
         status
       FROM campaign 
@@ -26,14 +28,35 @@ const getCampaignTracking = async (req, res) => {
     
     const campaign = campaignResult[0];
     
-    // 2. Generate date range
-    const dates = [];
-    const startDate = new Date(campaign.start_date);
-    const endDate = new Date(campaign.end_date);
+    console.log('📅 Campaign data from DB:', campaign);
     
-    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-      dates.push(d.toISOString().split('T')[0]);
+    // Now dates are already strings, no conversion needed
+    const startDateStr = campaign.start_date; // Already "2026-01-13"
+    const endDateStr = campaign.end_date;     // Already "2026-01-14"
+    
+    console.log('📅 Start date:', startDateStr);
+    console.log('📅 End date:', endDateStr);
+    
+    // Generate dates array
+    const dates = [];
+    const [startYear, startMonth, startDay] = startDateStr.split('-').map(Number);
+    const [endYear, endMonth, endDay] = endDateStr.split('-').map(Number);
+    
+    const startDate = new Date(startYear, startMonth - 1, startDay);
+    const endDate = new Date(endYear, endMonth - 1, endDay);
+    
+    let currentDate = new Date(startDate);
+    
+    while (currentDate <= endDate) {
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const day = String(currentDate.getDate()).padStart(2, '0');
+      dates.push(`${year}-${month}-${day}`);
+      
+      currentDate.setDate(currentDate.getDate() + 1);
     }
+    
+    console.log('📅 Generated dates array:', dates);
     
     const trackingQuery = `
       SELECT 
@@ -42,7 +65,7 @@ const getCampaignTracking = async (req, res) => {
         cc.client_email,
         cc.csv_row,
         cs.id as schedule_id,
-        cs.schedule_date,
+        DATE_FORMAT(cs.schedule_date, '%Y-%m-%d') as schedule_date,
         eq.id as queue_id,
         eq.status,
         eq.sent_at,
@@ -74,10 +97,9 @@ const getCampaignTracking = async (req, res) => {
       
       const client = clientsMap.get(row.client_id);
       
-      // Add status for each date
+      // Add status for each date (schedule_date is already a string now)
       if (row.schedule_date) {
-        const dateKey = new Date(row.schedule_date).toISOString().split('T')[0];
-        client.dateStatus[dateKey] = {
+        client.dateStatus[row.schedule_date] = {
           schedule_id: row.schedule_id,
           queue_id: row.queue_id,
           status: row.status || 'not_queued',
@@ -142,17 +164,22 @@ const getCampaignTracking = async (req, res) => {
   }
 };
 
-// Get TODAY's tracking data only - Auto updates daily
+// Other functions...
 const getTodayTracking = async (req, res) => {
   try {
     const { campaignId } = req.params;
-    const today = new Date().toISOString().split('T')[0]; // Auto gets today's date
+    const today = new Date().toISOString().split('T')[0];
     
     console.log(`📅 Fetching data for today: ${today}`);
     
-    // Get campaign details
     const campaignQuery = `
-      SELECT id, campaign_name, start_date, end_date, total_clients, status
+      SELECT 
+        id, 
+        campaign_name, 
+        DATE_FORMAT(start_date, '%Y-%m-%d') as start_date,
+        DATE_FORMAT(end_date, '%Y-%m-%d') as end_date,
+        total_clients, 
+        status
       FROM campaign WHERE id = ?
     `;
     const [campaignResult] = await db.execute(campaignQuery, [campaignId]);
@@ -166,7 +193,6 @@ const getTodayTracking = async (req, res) => {
     
     const campaign = campaignResult[0];
     
-    // Get only today's schedule and related data
     const trackingQuery = `
       SELECT 
         cc.id as client_id,
@@ -174,7 +200,7 @@ const getTodayTracking = async (req, res) => {
         cc.client_email,
         cc.csv_row,
         cs.id as schedule_id,
-        cs.schedule_date,
+        DATE_FORMAT(cs.schedule_date, '%Y-%m-%d') as schedule_date,
         eq.id as queue_id,
         eq.status,
         eq.sent_at,
@@ -193,7 +219,6 @@ const getTodayTracking = async (req, res) => {
     
     console.log(`✅ Found ${trackingData.length} clients scheduled for today`);
     
-    // Format response
     const clients = trackingData.map(row => ({
       client_id: row.client_id,
       client_name: row.client_name,
@@ -204,7 +229,6 @@ const getTodayTracking = async (req, res) => {
       error_message: row.error_message
     }));
     
-    // Calculate stats
     const stats = {
       total_clients: clients.length,
       total_sent: clients.filter(c => c.status === 'sent').length,
@@ -238,7 +262,6 @@ const getTodayTracking = async (req, res) => {
   }
 };
 
-// Get real-time status updates (for polling)
 const getStatusUpdates = async (req, res) => {
   try {
     const { campaignId } = req.params;
@@ -252,7 +275,7 @@ const getStatusUpdates = async (req, res) => {
         eq.status,
         eq.sent_at,
         eq.error_message,
-        cs.schedule_date
+        DATE_FORMAT(cs.schedule_date, '%Y-%m-%d') as schedule_date
       FROM email_queue eq
       JOIN campaign_schedule cs ON eq.schedule_id = cs.id
       WHERE eq.campaign_id = ?
@@ -287,7 +310,6 @@ const getStatusUpdates = async (req, res) => {
   }
 };
 
-// Get schedule overview (for dashboard)
 const getScheduleOverview = async (req, res) => {
   try {
     const { campaignId } = req.params;
@@ -295,7 +317,7 @@ const getScheduleOverview = async (req, res) => {
     const query = `
       SELECT 
         cs.id as schedule_id,
-        cs.schedule_date,
+        DATE_FORMAT(cs.schedule_date, '%Y-%m-%d') as schedule_date,
         cs.start_row,
         cs.end_row,
         cs.status as schedule_status,
@@ -329,7 +351,6 @@ const getScheduleOverview = async (req, res) => {
   }
 };
 
-// ✅ Export all functions
 module.exports = {
   getCampaignTracking,
   getTodayTracking,
